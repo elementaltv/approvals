@@ -16,7 +16,7 @@ input{font:inherit;padding:10px;border:1px solid #ccc;border-radius:8px;width:10
 details{margin-top:24px}summary{cursor:pointer;color:#555}.later{opacity:.75}
 .big{font-size:17px;padding:14px 22px}
 </style></head><body><main>
-<h1>Gwen approvals</h1><p class="sub" id="head">Checking what needs you…</p>
+<h1>Gwen approvals</h1><p class="sub" style="font-size:12px;margin:-8px 0 8px">Updates on its own every minute while open.</p><p class="sub" id="head">Checking what needs you…</p>
 <div id="setup" class="card" style="display:none"><b>One-time setup</b><p class="why">Paste your GitHub fine-grained token for repositories gwen and docs (Pull requests: Read and write, Contents: Read and write). It stays only in this browser.</p><input id="tok" type="password" placeholder="github_pat_..."><div style="margin-top:10px"><button id="save">Save</button></div></div>
 <div class="bar"><button id="doall" class="big">Do all, in order</button><button id="reload" class="sec">Refresh</button></div>
 <div id="g9box" class="card" style="display:none"><b>G9 scan failed on <span id="g9n"></span> open pull requests</b><p class="why">After a fix to the scan lands, re-run it so they can land. Needs the token's Actions permission set to Read and write.</p><button id="g9btn">Re-run G9 on all of them</button><div class="msg" id="g9m"></div></div>
@@ -97,4 +97,8 @@ for(const p of prs){try{const runs=await api(G+'/actions/runs?head_sha='+p.head.
 async function showG9(){try{const f=await g9Failed();if(!f.length){$('g9box').style.display='none';return}$('g9box').style.display='';$('g9n').textContent=f.length;
 $('g9btn').onclick=async()=>{$('g9btn').disabled=true;let ok=0,bad='';for(const x of f){try{await api(G+'/actions/runs/'+x.id+'/rerun-failed-jobs',{method:'POST'});ok++}catch(e){bad=e.message}}$('g9m').textContent='Re-ran '+ok+' of '+f.length+(bad?'. Last error: '+bad:'. Results in a few minutes; Land picks them up.');}}catch(e){}}
 
+
+let busy=false;const _act=act;act=async function(it){busy=true;try{return await _act(it)}finally{busy=false}};
+function autoRefresh(){if(!T||busy||document.hidden||($('landbtn')&&$('landbtn').disabled)||($('doall')&&$('doall').disabled))return;load();showG9();setTimeout(showLand,1500)}
+setInterval(autoRefresh,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh()});
 </script></main></body></html>
