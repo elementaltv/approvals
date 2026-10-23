@@ -1,0 +1,100 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gwen approvals</title>
+<style>
+body{font:15px/1.5 -apple-system,system-ui,sans-serif;margin:0;background:#f7f7f8;color:#111}
+main{max-width:860px;margin:0 auto;padding:24px 16px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 6px}.sub{color:#555;margin:0 0 16px}
+.card{background:#fff;border:1px solid #e3e3e6;border-radius:10px;padding:16px 18px;margin:0 0 12px}
+.row{display:flex;gap:14px;align-items:flex-start}.row .t{flex:1}
+.num{width:30px;height:30px;border-radius:50%;background:#2563eb;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.t a{color:#2563eb;font-weight:600;text-decoration:none}.why{color:#444;font-size:14px;margin-top:4px}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;background:#eef2ff;color:#3730a3;margin:6px 6px 0 0}
+.ok{background:#e8f6ee;color:#166534}.warn{background:#fff4e5;color:#9a3412}
+button{font:inherit;border:0;border-radius:8px;padding:10px 16px;background:#2563eb;color:#fff;cursor:pointer;min-height:44px}
+button.sec{background:#e5e7eb;color:#111}button:disabled{opacity:.5;cursor:default}
+input{font:inherit;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%;box-sizing:border-box}
+.bar{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap}.msg{font-size:14px;margin-top:6px}
+details{margin-top:24px}summary{cursor:pointer;color:#555}.later{opacity:.75}
+.big{font-size:17px;padding:14px 22px}
+</style></head><body><main>
+<h1>Gwen approvals</h1><p class="sub" id="head">Checking what needs you…</p>
+<div id="setup" class="card" style="display:none"><b>One-time setup</b><p class="why">Paste your GitHub fine-grained token for repositories gwen and docs (Pull requests: Read and write, Contents: Read and write). It stays only in this browser.</p><input id="tok" type="password" placeholder="github_pat_..."><div style="margin-top:10px"><button id="save">Save</button></div></div>
+<div class="bar"><button id="doall" class="big">Do all, in order</button><button id="reload" class="sec">Refresh</button></div>
+<div id="g9box" class="card" style="display:none"><b>G9 scan failed on <span id="g9n"></span> open pull requests</b><p class="why">After a fix to the scan lands, re-run it so they can land. Needs the token's Actions permission set to Read and write.</p><button id="g9btn">Re-run G9 on all of them</button><div class="msg" id="g9m"></div></div>
+<div id="landbox" class="card" style="display:none"><b><span id="landn"></span> pull requests are ready but Land is not picking them up</b><p class="why">Their scan passed after a re-run, but Land already turned them away once, so it skips them. Click once and keep this tab open: the page starts Land for each, one at a time, waiting for each to finish.</p><button id="landbtn">Land them, one at a time</button><div class="msg" id="landm"></div></div>
+<div id="now"></div>
+<details id="laterbox"><summary id="latersum">Not yet</summary><div id="later" class="later"></div></details>
+<div class="bar" style="margin-top:32px"><button id="forget" class="sec">Forget token</button></div>
+<script>
+const G='https://api.github.com/repos/elementaltv/gwen',D='https://api.github.com/repos/elementaltv/docs';
+let T='';try{T=localStorage.getItem('gwenTok')||''}catch(e){}
+const $=id=>document.getElementById(id),esc=s=>String(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+async function api(u,o={}){const r=await fetch(u,{...o,headers:{Authorization:'Bearer '+T,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(o.headers||{})}});if(!r.ok)throw new Error(r.status+' '+(await r.text()).slice(0,160));return r.status==204?null:r.json()}
+function clean(b){return (b||'').replace(/<!--[\s\S]*?-->/g,'').replace(/\*\*|__|`/g,'').replace(/^#+\s*/gm,'')}
+const VR=/(^|\n)\s*(?:Review:\s*)?(Needs Omer|Needs the owner|Ready to merge|Ready \(delegated\)|Ready|Not ready)\b[^\n]*/;
+const migOf=fl=>fl.map(f=>(f.filename.match(/supabase\/migrations\/\d{8}(\d{6})_/)||[])[1]).filter(Boolean).map(Number);
+let me='',items=[];
+async function gwenItems(){const prs=await api(G+'/pulls?state=open&per_page=100');const info={};
+for(const p0 of prs){const n=p0.number;const p=await api(G+'/pulls/'+n);const fl=await api(G+'/pulls/'+n+'/files?per_page=100');info[n]={p,mig:migOf(fl),pipe:fl.some(f=>/^(\.github|\.agentic)\/|^CLAUDE\.md$/.test(f.filename))}}
+const out=[];for(const p0 of prs){const n=p0.number,{p,mig,pipe}=info[n];
+const cs=await api(G+'/issues/'+n+'/comments?per_page=100');const head=await api(G+'/commits/'+p.head.sha);const headAt=head.commit.committer.date;
+const ver=cs.filter(c=>VR.test(clean(c.body))).pop();const vline=ver?clean(ver.body).match(VR)[0].trim():'';const verNew=ver&&ver.created_at>=headAt;
+const needs=/Needs (Omer|the owner)/.test(vline)||(/Ready/.test(vline)&&cs.some(c=>c.created_at>=(ver?ver.created_at:'')&&/waits for (Omer|the owner)/i.test(c.body||'')));
+if(!needs)continue;
+const g9=cs.filter(c=>/G9 security review/.test(c.body||'')).pop();const g9m=g9&&clean(g9.body).match(/G9 security review:?\s*(Pass|Stop)/i);
+const revs=await api(G+'/pulls/'+n+'/reviews?per_page=100');const approved=revs.some(r=>r.user&&r.user.login===me&&r.state==='APPROVED'&&r.commit_id===p.head.sha);
+if(approved)continue;
+let wait='',note='';
+if(p.user&&p.user.login===me)wait='Opened by you: GitHub does not let you approve your own';
+else if(!verNew)wait='The review is older than the latest commit; a fresh review is on its way';
+else if(g9m&&/stop/i.test(g9m[1]))wait='G9 stopped it; a fix is being made';
+if(!g9m)note='G9 review not posted yet; Land still checks G9 before merging';
+else if(p.mergeable_state==='dirty')note='Conflicts with main; the session will fix it, your approval still counts if no new commit is needed';
+else if(p.mergeable_state==='unstable')note='A check is failing; Land will not merge until it passes';
+if(!wait&&mig.length){const lo=Math.min(...mig);const before=prs.map(x=>x.number).filter(m=>m!==n&&info[m].mig.some(x=>x<lo));if(before.length)wait='Lands after #'+before.join(', #')+' (database changes go in number order)'}
+out.push({kind:'approve',n,title:p.title,url:p.html_url,sha:p.head.sha,why:vline,wait,note,order:mig.length?Math.min(...mig):(pipe?900000:1000000+n),label:'Approve'})}
+return out}
+async function docsItems(){const prs=await api(D+'/pulls?state=open&per_page=50');const out=[];
+for(const p0 of prs){const p=await api(D+'/pulls/'+p0.number);let wait='';const ms=p.mergeable_state;
+if(p.draft)wait='Draft';else if(ms==='dirty'||p.mergeable===false)wait='Conflicts with main; the docs session is fixing it';else if(ms==='unstable')wait='A check failed';else if(ms!=='clean')wait='Still checking; refresh in a minute';
+if(!wait){const refs=[...new Set(((p.body||'')+' '+p.title).match(/(?:elementaltv\/gwen#|gwen\/pull\/|gwen#)(\d+)/g)||[])].map(x=>+x.match(/(\d+)$/)[1]);const open=[];for(const g of refs){try{if((await api(G+'/pulls/'+g)).state==='open')open.push(g)}catch(e){}}if(open.length)wait='Describes Gwen #'+open.join(', #')+', which has not landed yet'}
+out.push({kind:'merge',n:p.number,title:p.title,url:p.html_url,sha:p.head.sha,why:'Merging publishes it to the docs site.',wait,order:2000000+p.number,label:'Merge'})}
+return out}
+function card(it,i){const d=document.createElement('div');d.className='card';const id=it.kind+it.n;
+d.innerHTML='<div class="row">'+(i?'<div class="num">'+i+'</div>':'')+'<div class="t"><a href="'+it.url+'/files" target="_blank">'+(it.kind==='merge'?'docs #':'gwen #')+it.n+' '+esc(it.title)+'</a><div class="why">'+esc(it.why)+'</div>'+(it.wait?'<span class="tag warn">'+esc(it.wait)+'</span>':'')+(it.note?'<span class="tag">'+esc(it.note)+'</span>':'')+'<div class="msg" id="m'+id+'"></div></div>'+(i?'<div><button id="b'+id+'">'+it.label+'</button></div>':'')+'</div>';
+return d}
+async function act(it){const id=it.kind+it.n,b=$('b'+id),m=$('m'+id);if(b)b.disabled=true;m.textContent=it.kind==='approve'?'Approving…':'Merging…';
+try{if(it.kind==='approve')await api(G+'/pulls/'+it.n+'/reviews',{method:'POST',body:JSON.stringify({commit_id:it.sha,event:'APPROVE'})});
+else await api(D+'/pulls/'+it.n+'/merge',{method:'PUT',body:JSON.stringify({merge_method:'squash',sha:it.sha})});
+it.done=true;m.textContent=it.kind==='approve'?'Approved. Land takes it from here.':'Merged. The docs site updates in a minute or two.';return true}
+catch(e){if(b)b.disabled=false;m.textContent='Not done: '+e.message;return false}}
+let run=0;async function load(){const my=++run;if(!T){$('setup').style.display='block';$('head').textContent='Set up once to start.';return}
+$('setup').style.display='none';$('head').textContent='Checking what needs you…';$('now').innerHTML='';$('later').innerHTML='';
+try{me=(await api('https://api.github.com/user')).login;const [g,d]=await Promise.all([gwenItems(),docsItems().catch(()=>[])]);if(my!==run)return;items=g.concat(d).sort((a,b)=>a.order-b.order);$('now').innerHTML='';$('later').innerHTML='';
+const now=items.filter(x=>!x.wait),later=items.filter(x=>x.wait);
+$('head').textContent=now.length?(now.length===1?'1 thing needs you. Click it, or Do all.':now.length+' things need you, in this order. Click each, or Do all.'):'Nothing needs you right now.';
+now.forEach((it,i)=>{const c=card(it,i+1);$('now').appendChild(c);$('b'+it.kind+it.n).onclick=()=>act(it)});
+$('doall').style.display=now.length?'':'none';
+later.forEach(it=>$('later').appendChild(card(it,0)));$('latersum').textContent='Not yet ('+later.length+'): waiting on something else, no click needed';$('laterbox').style.display=later.length?'':'none'}
+catch(e){$('head').textContent='Could not read GitHub: '+e.message}}
+$('doall').onclick=async()=>{$('doall').disabled=true;for(const it of items.filter(x=>!x.wait&&!x.done)){if(!await act(it))break}$('doall').disabled=false};
+$('reload').onclick=()=>{load();showG9();setTimeout(showLand,1500);
+async function readyStuck(){if(!me)me=(await api('https://api.github.com/user')).login;const prs=await api(G+'/pulls?state=open&per_page=100');const lr=await api(G+'/actions/workflows/land.yml/runs?per_page=30');
+if(lr.workflow_runs.some(r=>r.status!=='completed'))return {busy:true,list:[]};const out=[];
+for(const p of prs){if(p.draft)continue;const sha=p.head.sha;let g9ok=false;try{const runs=await api(G+'/actions/runs?head_sha='+sha+'&per_page=50');const r=runs.workflow_runs.filter(w=>/^G9 security$/i.test(w.name)).sort((a,b)=>b.run_number-a.run_number)[0];g9ok=!!r&&r.status==='completed'&&r.conclusion==='success'}catch(e){}
+if(!g9ok)continue;const cs=(await api(G+'/issues/'+p.number+'/comments?per_page=100')).map(c=>clean(c.body));const v=cs.filter(b=>VR.test(b)).pop()||'';const vl=(v.match(VR)||[''])[0];
+const revs=await api(G+'/pulls/'+p.number+'/reviews?per_page=100');const appr=revs.some(r=>r.user&&r.user.login===me&&r.state==='APPROVED'&&r.commit_id===sha);
+const landed=lr.workflow_runs.some(r=>(r.display_title||r.name||'').includes('#'+p.number+' '+sha.slice(0,40)));
+const ready=/Ready (to merge|\(delegated\))/.test(vl)||appr;if(ready&&landed)out.push({n:p.number,sha})}return {busy:false,list:out}}
+async function showLand(){try{const r=await readyStuck();if(r.busy||!r.list.length){$('landbox').style.display='none';return}$('landbox').style.display='';$('landn').textContent=r.list.length;
+$('landbtn').onclick=async()=>{$('landbtn').disabled=true;for(const x of r.list){$('landm').textContent='Starting Land for #'+x.n+'…';
+try{await api(G+'/actions/workflows/land.yml/dispatches',{method:'POST',body:JSON.stringify({ref:'main',inputs:{pr:String(x.n),sha:x.sha,attempt:'2'}})})}catch(e){$('landm').textContent='Could not start #'+x.n+': '+e.message;break}
+await new Promise(res=>setTimeout(res,20000));for(let i=0;i<60;i++){const lr=await api(G+'/actions/workflows/land.yml/runs?per_page=5');if(!lr.workflow_runs.some(w=>w.status!=='completed'))break;$('landm').textContent='Land is working on #'+x.n+'… (keep this tab open)';await new Promise(res=>setTimeout(res,30000))}}
+$('landm').textContent='Done. Refresh to see what is left.';$('landbtn').disabled=false}}catch(e){}}
+setTimeout(showLand,1500)};$('save').onclick=()=>{T=$('tok').value.trim();try{localStorage.setItem('gwenTok',T)}catch(e){}load()};
+$('forget').onclick=()=>{try{localStorage.removeItem('gwenTok')}catch(e){}T='';load()};load();showG9();
+async function g9Failed(){const prs=await api(G+'/pulls?state=open&per_page=100');const out=[];
+for(const p of prs){try{const runs=await api(G+'/actions/runs?head_sha='+p.head.sha+'&per_page=50');const r=runs.workflow_runs.filter(w=>/^G9 security$/i.test(w.name)).sort((a,b)=>b.run_number-a.run_number)[0];if(r&&r.status==='completed'&&r.conclusion==='failure')out.push({n:p.number,id:r.id})}catch(e){}}return out}
+async function showG9(){try{const f=await g9Failed();if(!f.length){$('g9box').style.display='none';return}$('g9box').style.display='';$('g9n').textContent=f.length;
+$('g9btn').onclick=async()=>{$('g9btn').disabled=true;let ok=0,bad='';for(const x of f){try{await api(G+'/actions/runs/'+x.id+'/rerun-failed-jobs',{method:'POST'});ok++}catch(e){bad=e.message}}$('g9m').textContent='Re-ran '+ok+' of '+f.length+(bad?'. Last error: '+bad:'. Results in a few minutes; Land picks them up.');}}catch(e){}}
+
+</script></main></body></html>
