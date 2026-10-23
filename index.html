@@ -23,7 +23,7 @@ details{margin-top:24px}summary{cursor:pointer;color:#555}.later{opacity:.75}
 <div id="landbox" class="card" style="display:none"><b><span id="landn"></span> pull requests are ready but Land is not picking them up</b><p class="why">Their scan passed after a re-run, but Land already turned them away once, so it skips them. Click once and keep this tab open: the page starts Land for each, one at a time, waiting for each to finish.</p><button id="landbtn">Land them, one at a time</button><div class="msg" id="landm"></div></div>
 <div id="now"></div>
 <details id="laterbox"><summary id="latersum">Not yet</summary><div id="later" class="later"></div></details>
-<div class="bar" style="margin-top:32px"><button id="forget" class="sec">Forget token</button></div>
+<details style="margin-top:56px;color:#777;font-size:13px"><summary style="cursor:pointer">Key settings</summary><p class="why">Removes the GitHub key from this browser. You will need to paste it again.</p><button id="forget" class="sec" style="background:#fff;border:1px solid #d33;color:#b00">Remove key from this browser</button></details>
 <script>
 const G='https://api.github.com/repos/elementaltv/gwen',D='https://api.github.com/repos/elementaltv/docs';
 let T='';try{T=localStorage.getItem('gwenTok')||''}catch(e){}
@@ -91,7 +91,7 @@ try{await api(G+'/actions/workflows/land.yml/dispatches',{method:'POST',body:JSO
 await new Promise(res=>setTimeout(res,20000));for(let i=0;i<60;i++){const lr=await api(G+'/actions/workflows/land.yml/runs?per_page=5');if(!lr.workflow_runs.some(w=>w.status!=='completed'))break;$('landm').textContent='Land is working on #'+x.n+'… (keep this tab open)';await new Promise(res=>setTimeout(res,30000))}}
 $('landm').textContent='Done. Refresh to see what is left.';$('landbtn').disabled=false}}catch(e){}}
 setTimeout(showLand,1500)};$('save').onclick=()=>{T=$('tok').value.trim();try{localStorage.setItem('gwenTok',T)}catch(e){}load()};
-$('forget').onclick=()=>{try{localStorage.removeItem('gwenTok')}catch(e){}T='';load()};load();showG9();
+$('forget').onclick=()=>{const b=$('forget');if(b.dataset.armed!=='1'){b.dataset.armed='1';b.textContent='Tap again to remove the key';setTimeout(()=>{b.dataset.armed='';b.textContent='Remove key from this browser'},4000);return}try{localStorage.removeItem('gwenTok')}catch(e){}T='';load()};load();showG9();
 async function g9Failed(){const prs=await api(G+'/pulls?state=open&per_page=100');const out=[];
 for(const p of prs){try{const runs=await api(G+'/actions/runs?head_sha='+p.head.sha+'&per_page=50');const r=runs.workflow_runs.filter(w=>/^G9 security$/i.test(w.name)).sort((a,b)=>b.run_number-a.run_number)[0];if(r&&r.status==='completed'&&r.conclusion==='failure')out.push({n:p.number,id:r.id})}catch(e){}}return out}
 async function showG9(){try{const f=await g9Failed();if(!f.length){$('g9box').style.display='none';return}$('g9box').style.display='';$('g9n').textContent=f.length;
