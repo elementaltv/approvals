@@ -37,7 +37,7 @@ async function gwenItems(){const prs=await api(G+'/pulls?state=open&per_page=100
 for(const p0 of prs){const n=p0.number;const p=await api(G+'/pulls/'+n);const fl=await api(G+'/pulls/'+n+'/files?per_page=100');info[n]={p,mig:migOf(fl),pipe:fl.some(f=>/^(\.github|\.agentic)\/|^CLAUDE\.md$/.test(f.filename))}}
 const out=[];for(const p0 of prs){const n=p0.number,{p,mig,pipe}=info[n];
 const cs=await api(G+'/issues/'+n+'/comments?per_page=100');const head=await api(G+'/commits/'+p.head.sha);const headAt=head.commit.committer.date;
-const ver=cs.filter(c=>VR.test(clean(c.body))).pop();const vline=ver?clean(ver.body).match(VR)[0].trim():'';const verNew=ver&&ver.created_at>=headAt;
+const ver=cs.filter(c=>VR.test(clean(c.body))).pop();const vline=ver?clean(ver.body).match(VR)[0].trim():'';const verNew=ver&&(ver.updated_at>=headAt||ver.created_at>=headAt||clean(ver.body).includes(p.head.sha.slice(0,7)));
 const needs=/Needs (Omer|the owner)/.test(vline)||(/Ready/.test(vline)&&cs.some(c=>c.created_at>=(ver?ver.created_at:'')&&/waits for (Omer|the owner)/i.test(c.body||'')));
 if(!needs)continue;
 const g9=cs.filter(c=>/G9 security review/.test(c.body||'')).pop();const g9m=g9&&clean(g9.body).match(/G9 security review:?\s*(Pass|Stop)/i);
